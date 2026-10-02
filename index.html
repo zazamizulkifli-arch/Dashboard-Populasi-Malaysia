@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard Populasi Malaysia — DOSM</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.3/papaparse.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{--navy:#0b1f3a;--blue:#1261a0;--cyan:#1597b8;--bg:#f4f7fb;--card:#fff;--muted:#64748b;--line:#e2e8f0}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:Inter,Segoe UI,Arial,sans-serif;color:#172033}
+.header{background:linear-gradient(120deg,#071a33,#1261a0);color:white;padding:26px 32px}
+.header h1{margin:0;font-size:27px}.header p{margin:7px 0 0;color:#dbeafe}
+.wrap{max-width:1450px;margin:auto;padding:22px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:18px}
+label{font-size:12px;font-weight:700;color:#475569;display:block;margin-bottom:5px}
+select{background:white;border:1px solid #cbd5e1;border-radius:9px;padding:10px 12px;min-width:155px}
+.btn{border:0;border-radius:9px;padding:11px 14px;background:var(--navy);color:white;cursor:pointer;font-weight:700}
+.status{margin-left:auto;color:var(--muted);font-size:12px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:15px;box-shadow:0 3px 14px #0f172a0a;padding:17px}
+.kpi .label{font-size:12px;color:var(--muted);font-weight:700}.kpi .value{font-size:29px;font-weight:800;margin-top:5px}.kpi .sub{font-size:12px;color:var(--muted);margin-top:4px}
+.grid2{display:grid;grid-template-columns:1.5fr 1fr;gap:16px;margin-bottom:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+.card h3{margin:0 0 10px;font-size:15px}.chart{height:360px}.chart.small{height:320px}
+#map{height:420px;border-radius:10px;overflow:hidden}
+.table-wrap{overflow:auto;max-height:430px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{padding:9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}th{position:sticky;top:0;background:#f8fafc;color:#475569}
+.footer{font-size:11px;color:#64748b;padding:15px 2px 30px}.note{background:#eff6ff;border-left:4px solid #2563eb;padding:10px 13px;border-radius:8px;font-size:12px;margin-bottom:16px}
+@media(max-width:1000px){.kpis{grid-template-columns:1fr 1fr}.grid2,.grid3{grid-template-columns:1fr}.status{width:100%;margin-left:0}}
+@media(max-width:600px){.wrap{padding:12px}.header{padding:20px}.kpis{grid-template-columns:1fr}.chart{height:300px}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div style="max-width:1450px;margin:auto">
+    <h1>Dashboard Populasi Malaysia</h1>
+    <p>Analitik interaktif berdasarkan data terbuka Jabatan Perangkaan Malaysia (DOSM)</p>
+  </div>
+</div>
+<div class="wrap">
+  <div class="note"><b>Data dinamik:</b> dashboard membaca terus dataset rasmi DOSM apabila dibuka. Penapis dan graf akan berubah mengikut pilihan anda.</div>
+  <div class="toolbar">
+    <div><label>Tahun</label><select id="year"></select></div>
+    <div><label>Jantina</label><select id="sex"><option value="both">Kedua-dua</option><option value="male">Lelaki</option><option value="female">Perempuan</option></select></div>
+    <div><label>Kumpulan umur</label><select id="age"><option value="overall">Semua umur</option></select></div>
+    <div><label>Kumpulan etnik</label><select id="eth"><option value="overall">Semua etnik</option></select></div>
+    <button class="btn" onclick="resetFilters()">Reset</button>
+    <span class="status" id="status">Memuatkan data DOSM…</span>
+  </div>
+
+  <div class="kpis">
+    <div class="card kpi"><div class="label">JUMLAH PENDUDUK</div><div class="value" id="kpiPop">—</div><div class="sub" id="kpiYear">—</div></div>
+    <div class="card kpi"><div class="label">PERTUMBUHAN TAHUNAN</div><div class="value" id="kpiGrowth">—</div><div class="sub">berbanding tahun sebelumnya</div></div>
+    <div class="card kpi"><div class="label">LELAKI</div><div class="value" id="kpiMale">—</div><div class="sub" id="kpiMalePct">—</div></div>
+    <div class="card kpi"><div class="label">PEREMPUAN</div><div class="value" id="kpiFemale">—</div><div class="sub" id="kpiFemalePct">—</div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><h3>Trend Penduduk Malaysia, 1970–2026</h3><div id="trend" class="chart"></div></div>
+    <div class="card"><h3>Komposisi Etnik</h3><div id="ethChart" class="chart"></div></div>
+  </div>
+  <div class="grid3">
+    <div class="card"><h3>Penduduk Mengikut Umur</h3><div id="ageChart" class="chart small"></div></div>
+    <div class="card"><h3>Perbandingan Jantina</h3><div id="sexChart" class="chart small"></div></div>
+    <div class="card"><h3>Peta Penduduk Mengikut Negeri</h3><div id="map"></div></div>
+  </div>
+
+  <div class="card">
+    <h3>Jadual Data Dipilih</h3>
+    <div class="table-wrap"><table><thead><tr><th>Tahun</th><th>Jantina</th><th>Umur</th><th>Etnik</th><th>Penduduk ('000)</th></tr></thead><tbody id="tbody"></tbody></table></div>
+  </div>
+
+  <div class="footer">
+    Sumber: Department of Statistics Malaysia (DOSM), OpenDOSM. Dataset nasional: population_malaysia; dataset negeri digunakan untuk paparan peta.
+    Data penduduk dinyatakan dalam ribuan orang ('000). Dashboard ini ialah paparan analitik dan bukan produk rasmi DOSM.
+  </div>
+</div>
+
+<script>
+const NATIONAL_API='https://api.data.gov.my/data-catalogue?id=population_malaysia&limit=100000';
+const STATE_API='https://api.data.gov.my/data-catalogue?id=population_state&limit=100000';
+let nat=[], states=[];
+
+const ethNames={overall:'Semua etnik',bumi_malay:'Melayu',bumi_other:'Bumiputera lain',chinese:'Cina',indian:'India',other_citizen:'Lain-lain warganegara',other_noncitizen:'Bukan warganegara'};
+const sexNames={both:'Kedua-dua',male:'Lelaki',female:'Perempuan'};
+
+function num(x){return Number(x)||0}
+function fmt(v){return (v/1000).toLocaleString('ms-MY',{maximumFractionDigits:2})+' juta'}
+function pct(v){return (v*100).toLocaleString('ms-MY',{maximumFractionDigits:1})+'%'}
+function by(filter){return nat.filter(filter)}
+function sum(a){return a.reduce((s,r)=>s+num(r.population),0)}
+function unique(a,k){return [...new Set(a.map(r=>r[k]))].sort()}
+
+async function loadAPI(url){
+  const res=await fetch(url,{cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const json=await res.json();
+  // Government Open API returns an array for catalogue queries.
+  if(Array.isArray(json)) return json;
+  if(Array.isArray(json.data)) return json.data;
+  if(Array.isArray(json.results)) return json.results;
+  throw new Error('Format API tidak dikenali');
+}
+async function init(){
+ try{
+   status.textContent='Menyambung ke Open API DOSM…';
+   nat=await loadAPI(NATIONAL_API);
+   // State data is optional; the national dashboard remains fully functional if the
+   // state endpoint is unavailable.
+   try { states=await loadAPI(STATE_API); } catch(e) { states=[]; }
+
+   nat.forEach(r=>{r.date=new Date(r.date);r.year=r.date.getFullYear();r.population=Number(r.population)});
+   states.forEach(r=>{r.date=new Date(r.date);r.year=r.date.getFullYear();r.population=Number(r.population)});
+   const years=unique(nat,'year').sort((a,b)=>a-b);
+   year.innerHTML=years.map(y=>`<option value="${y}">${y}</option>`).join('');
+   year.value=years[years.length-1];
+   const ages=unique(nat,'age').filter(x=>x!=='overall');
+   age.innerHTML='<option value="overall">Semua umur</option>'+ages.map(x=>`<option value="${x}">${x}</option>`).join('');
+   eth.innerHTML=Object.entries(ethNames).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
+   status.textContent=`✓ ${nat.length.toLocaleString()} rekod nasional DOSM dimuatkan`;
+   ['year','sex','age','eth'].forEach(id=>document.getElementById(id).addEventListener('change',render));
+   render();
+ }catch(e){
+   status.textContent='⚠ Data gagal dimuatkan: '+e.message;
+   document.querySelectorAll('.value').forEach(x=>x.textContent='—');
+   console.error(e);
+ }
+}
+
+function resetFilters(){year.value=Math.max(...nat.map(r=>r.year));sex.value='both';age.value='overall';eth.value='overall';render()}
+
+function render(){
+ const y=+year.value,s=sex.value,a=age.value,e=eth.value;
+ // KPI total, intentionally based on overall/overall/overall
+ const total=sum(by(r=>r.year===y&&r.sex==='both'&&r.age==='overall'&&r.ethnicity==='overall'));
+ const prev=sum(by(r=>r.year===y-1&&r.sex==='both'&&r.age==='overall'&&r.ethnicity==='overall'));
+ const male=sum(by(r=>r.year===y&&r.sex==='male'&&r.age==='overall'&&r.ethnicity==='overall'));
+ const female=sum(by(r=>r.year===y&&r.sex==='female'&&r.age==='overall'&&r.ethnicity==='overall'));
+ kpiPop.textContent=fmt(total);kpiYear.textContent='Tahun '+y;
+ kpiGrowth.textContent=prev?((total-prev)/prev*100).toLocaleString('ms-MY',{maximumFractionDigits:2})+'%':'—';
+ kpiMale.textContent=fmt(male);kpiMalePct.textContent=total?pct(male/total):'—';
+ kpiFemale.textContent=fmt(female);kpiFemalePct.textContent=total?pct(female/total):'—';
+
+ const base=by(r=>r.sex===s&&r.age===a&&r.ethnicity===e);
+ const years=unique(base,'year').sort((x,y)=>x-y);
+ const tv=years.map(yy=>sum(base.filter(r=>r.year===yy)));
+ Plotly.react('trend',[{x:years,y:tv,type:'scatter',mode:'lines+markers',hovertemplate:'Tahun %{x}<br>Penduduk %{y:,.1f} ribu<extra></extra>'}],{margin:{t:10,r:15,b:45,l:60},xaxis:{title:'Tahun'},yaxis:{title:"'000 orang"},paper_bgcolor:'transparent',plot_bgcolor:'transparent'},{responsive:true,displaylogo:false});
+
+ const er=by(r=>r.year===y&&r.sex===s&&r.age===a&&r.ethnicity!=='overall');
+ const emap={}; er.forEach(r=>emap[r.ethnicity]=(emap[r.ethnicity]||0)+num(r.population));
+ Plotly.react('ethChart',[{labels:Object.keys(emap).map(k=>ethNames[k]||k),values:Object.values(emap),type:'pie',hole:.48,textinfo:'label+percent',hovertemplate:'%{label}<br>%{value:,.1f} ribu<extra></extra>'}],{margin:{t:5,r:5,b:5,l:5},paper_bgcolor:'transparent',showlegend:false},{responsive:true,displaylogo:false});
+
+ const ar=by(r=>r.year===y&&r.sex===s&&r.ethnicity===e&&r.age!=='overall');
+ const ages=unique(ar,'age');
+ Plotly.react('ageChart',[{x:ages,y:ages.map(aa=>sum(ar.filter(r=>r.age===aa))),type:'bar'}],{margin:{t:5,r:10,b:70,l:55},xaxis:{tickangle:-55},yaxis:{title:"'000"},paper_bgcolor:'transparent',plot_bgcolor:'transparent'},{responsive:true,displaylogo:false});
+
+ const sr=['male','female'].map(ss=>sum(by(r=>r.year===y&&r.sex===ss&&r.age===a&&r.ethnicity===e)));
+ Plotly.react('sexChart',[{x:['Lelaki','Perempuan'],y:sr,type:'bar',text:sr.map(v=>v.toLocaleString('ms-MY',{maximumFractionDigits:1})),textposition:'auto'}],{margin:{t:5,r:10,b:45,l:55},yaxis:{title:"'000"},paper_bgcolor:'transparent',plot_bgcolor:'transparent'},{responsive:true,displaylogo:false});
+
+ renderTable(y,s,a,e);
+ renderMap(y);
+}
+function renderTable(y,s,a,e){
+ const rows=by(r=>r.year===y&&r.sex===s&&r.age===a&&r.ethnicity===e).sort((x,y)=>num(y.population)-num(x.population));
+ tbody.innerHTML=rows.map(r=>`<tr><td>${r.year}</td><td>${sexNames[r.sex]||r.sex}</td><td>${r.age}</td><td>${ethNames[r.ethnicity]||r.ethnicity}</td><td>${num(r.population).toLocaleString('ms-MY',{maximumFractionDigits:1})}</td></tr>`).join('')||'<tr><td colspan="5">Tiada data untuk pilihan ini.</td></tr>';
+}
+function renderMap(y){
+ const rows=states.filter(r=>r.year===y&&r.sex==='both'&&r.age==='overall'&&r.ethnicity==='overall');
+ const names=unique(rows,'state');
+ const vals=names.map(n=>sum(rows.filter(r=>r.state===n)));
+ if(!rows.length){
+   const el=document.getElementById('map');
+   el.innerHTML='<div style="padding:28px;color:#64748b;font-size:13px">Data negeri tidak tersedia melalui Open API untuk paparan peta ini. Graf dan jadual nasional tetap berfungsi.</div>';
+   return;
+ }
+ // Use a simple Leaflet map with proportional circles when no state boundary GeoJSON is available.
+ if(window._map){_map.remove()}
+ _map=L.map('map',{scrollWheelZoom:false}).setView([4.2,109.5],5.2);
+ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors'}).addTo(_map);
+ const coords={
+ 'Johor':[1.95,103.44],'Kedah':[6.12,100.37],'Kelantan':[6.13,102.24],'Melaka':[2.19,102.25],
+ 'Negeri Sembilan':[2.73,101.94],'Pahang':[3.81,103.33],'Perak':[4.80,100.98],
+ 'Perlis':[6.45,100.20],'Pulau Pinang':[5.41,100.33],'Sabah':[5.98,116.08],
+ 'Sarawak':[2.52,113.0],'Selangor':[3.07,101.48],'Terengganu':[5.31,103.13],
+ 'W.P. Kuala Lumpur':[3.14,101.69],'W.P. Labuan':[5.28,115.24],'W.P. Putrajaya':[2.93,101.69]
+ };
+ const max=Math.max(...vals,1);
+ names.forEach((n,i)=>{if(!coords[n])return; const radius=7000+Math.sqrt(vals[i]/max)*35000;
+   L.circle(coords[n],{radius,fillOpacity:.55,stroke:true}).addTo(_map)
+    .bindPopup(`<b>${n}</b><br>Penduduk ${y}: ${vals[i].toLocaleString('ms-MY',{maximumFractionDigits:1})} ribu`);
+ });
+}
+init();
+</script>
+</body>
+</html>
